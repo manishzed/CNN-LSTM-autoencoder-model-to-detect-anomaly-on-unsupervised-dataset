@@ -1,0 +1,9 @@
+Supervised or unsupervised?
+where/how did you get f1?
+why is your model not compatible with CubeMxAI
+how will you prove your models efficiency
+evaluate in all types of micro-controllers.
+
+
+check all models for STM32 then check for all mocro-controllers
+

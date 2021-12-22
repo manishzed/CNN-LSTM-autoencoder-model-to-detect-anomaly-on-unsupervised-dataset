@@ -1,0 +1,70 @@
+import tensorflow as tf
+import larq as lq
+import tensorflow_model_optimization as tfmot
+
+def autoencoder_LTSM_Softweb(X):
+    initializer = 'he_uniform'
+
+    inputs = tf.keras.Input(shape=(X.shape[1], X.shape[2]))
+    L1 = tf.keras.layers.LSTM(16, activation='relu', return_sequences=True, 
+              kernel_regularizer=tf.keras.regularizers.l2(0.00))(inputs)
+    L2 = tf.keras.layers.LSTM(4, activation='relu', return_sequences=False)(L1)
+    L3 = tf.keras.layers.RepeatVector(X.shape[1])(L2)
+    L4 = tf.keras.layers.LSTM(4, activation='relu', return_sequences=True)(L3)
+    L5 = tf.keras.layers.LSTM(16, activation='sigmoid', return_sequences=True)(L4)
+    output = tf.keras.layers.TimeDistributed(tf.keras.layers.Dense(X.shape[2]))(L5)    
+
+    model = tf.keras.Model(inputs=inputs, outputs=output)
+    return model
+
+def autoencoder_CNN_Softweb(X):
+    initializer = 'he_uniform'
+
+    inputs = tf.keras.Input(shape=(X.shape[1], X.shape[2]))
+    L1 = tf.keras.layers.Conv1D(16, 4, activation='relu', padding='same',dilation_rate = 1)(inputs)
+    L2 = tf.keras.layers.Conv1D(4, 4, activation='relu', padding='same',dilation_rate = 1)(L1)
+    L3 = tf.keras.layers.Conv1D(4, 4, activation='relu', padding='same',dilation_rate = 1)(L2)
+    L4 = tf.keras.layers.Conv1D(16, 4, activation='relu', padding='same',dilation_rate = 1)(L3)
+    output = tf.keras.layers.Dense(X.shape[2])(L4)   
+
+    model = tf.keras.Model(inputs=inputs, outputs=output)
+    return model
+
+def autoencoder_CNN_witekio(X):
+    initializer = 'he_uniform'
+    filter_size = 4
+    nbr_filter = 16
+    dropout = 0.01
+    Quant = lq.quantizers.SteSign(clip_value=1.)
+    Weight = lq.constraints.WeightClip(clip_value=1.)
+    kwargs = dict(kernel_quantizer=Quant,
+    kernel_constraint=Weight,
+    input_quantizer=Quant,
+    use_bias=True)
+
+    inputs = tf.keras.Input(shape=(X.shape[1], X.shape[2]))
+    x = tfmot.quantization.keras.quantize_annotate_layer(tf.keras.layers.Conv1D(nbr_filter, filter_size, activation='relu', padding='causal', dilation_rate = 1,
+                kernel_initializer=initializer))(inputs)
+    shortcut = x
+
+    x = lq.layers.QuantConv1D(nbr_filter, filter_size, activation='relu', padding='causal', dilation_rate = 2, kernel_initializer=initializer, **kwargs)(x)
+    x = tf.keras.layers.add([x, shortcut])
+    x = tf.keras.layers.SpatialDropout1D(dropout)(x)
+    shortcut = x
+
+    x = lq.layers.QuantConv1D(nbr_filter, filter_size, activation='relu', padding='causal', dilation_rate = 4,
+                kernel_initializer=initializer, **kwargs)(x)
+    x = tf.keras.layers.add([x, shortcut])
+    x = tf.keras.layers.SpatialDropout1D(dropout)(x)
+    shortcut = x
+
+    x = lq.layers.QuantConv1D(nbr_filter, filter_size, activation='relu', padding='causal', dilation_rate = 8,
+                kernel_initializer=initializer, **kwargs)(x)
+    x = tf.keras.layers.add([x, shortcut])
+    x = tf.keras.layers.SpatialDropout1D(dropout)(x)
+
+    decoded = tfmot.quantization.keras.quantize_annotate_layer(tf.keras.layers.Conv1D(X.shape[2], filter_size, activation='sigmoid', padding='causal', 
+                kernel_initializer=initializer))(x)
+
+    model = tf.keras.Model(inputs=inputs, outputs=decoded)
+    return model
